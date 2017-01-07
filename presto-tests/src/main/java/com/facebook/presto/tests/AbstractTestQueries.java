@@ -5003,6 +5003,20 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void testExplainValidate()
+    {
+        MaterializedResult result = computeActual("EXPLAIN (TYPE VALIDATE) SELECT 1");
+        assertEquals(getOnlyElement(result.getOnlyColumnAsSet()), "true");
+    }
+
+    @Test(expectedExceptions=SemanticException.class)
+    public void testExplainValidateThrows()
+    {
+        MaterializedResult result = computeActual("EXPLAIN (TYPE VALIDATE) SELECT x");
+        assertEquals(getOnlyElement(result.getOnlyColumnAsSet()), "true");
+    }
+
+    @Test
     public void testExplainOfExplain()
     {
         String query = "EXPLAIN SELECT * FROM orders";
