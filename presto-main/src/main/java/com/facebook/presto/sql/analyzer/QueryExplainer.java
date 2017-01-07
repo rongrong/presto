@@ -90,6 +90,10 @@ public class QueryExplainer
             case DISTRIBUTED:
                 SubPlan subPlan = getDistributedPlan(session, statement, parameters);
                 return PlanPrinter.textDistributedPlan(subPlan, metadata, session);
+            case VALIDATE:
+                Analyzer analyzer = new Analyzer(session, metadata, sqlParser, accessControl, Optional.of(this), parameters);
+                analyzer.analyze(statement);
+                return "TRUE";
         }
         throw new IllegalArgumentException("Unhandled plan type: " + planType);
     }
