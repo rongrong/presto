@@ -23,11 +23,15 @@ import com.facebook.presto.spi.block.BlockBuilderStatus;
 import com.facebook.presto.spi.function.AccumulatorState;
 import com.facebook.presto.spi.function.AccumulatorStateFactory;
 import com.facebook.presto.spi.function.AccumulatorStateSerializer;
-import com.facebook.presto.spi.type.BooleanType;
-import com.facebook.presto.spi.type.VarcharType;
+import com.facebook.presto.type.RowType;
+import com.google.common.collect.ImmutableList;
 import org.testng.annotations.Test;
 
+import java.util.Optional;
+
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
+import static com.facebook.presto.spi.type.BooleanType.BOOLEAN;
+import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
 import static org.testng.Assert.assertEquals;
 
 public class TestStateCompiler
@@ -95,7 +99,7 @@ public class TestStateCompiler
 
         state.setBoolean(true);
 
-        BlockBuilder builder = BooleanType.BOOLEAN.createBlockBuilder(new BlockBuilderStatus(), 1);
+        BlockBuilder builder = BOOLEAN.createBlockBuilder(new BlockBuilderStatus(), 1);
         serializer.serialize(state, builder);
 
         Block block = builder.build();
@@ -133,7 +137,7 @@ public class TestStateCompiler
         singleState.setCount(2);
         singleState.setM2(3);
 
-        BlockBuilder builder = VarcharType.VARCHAR.createBlockBuilder(new BlockBuilderStatus(), 1);
+        BlockBuilder builder = new RowType(ImmutableList.of(BIGINT, DOUBLE, DOUBLE), Optional.empty()).createBlockBuilder(new BlockBuilderStatus(), 1);
         serializer.serialize(singleState, builder);
 
         Block block = builder.build();
@@ -157,7 +161,7 @@ public class TestStateCompiler
         singleState.setDouble(2.0);
         singleState.setByte((byte) 3);
 
-        BlockBuilder builder = VarcharType.VARCHAR.createBlockBuilder(new BlockBuilderStatus(), 1);
+        BlockBuilder builder = new RowType(ImmutableList.of(BOOLEAN, BIGINT, DOUBLE, BIGINT), Optional.empty()).createBlockBuilder(new BlockBuilderStatus(), 1);
         serializer.serialize(singleState, builder);
 
         Block block = builder.build();

@@ -98,7 +98,7 @@ public class SqlTypeBytecodeExpression
             return invoke("writeBoolean", void.class, blockBuilder, value);
         }
         if (fromJavaElementType == long.class) {
-            return invoke("writeLong", void.class, blockBuilder, value);
+            return invoke("writeLong", void.class, blockBuilder, value.cast(long.class));
         }
         if (fromJavaElementType == double.class) {
             return invoke("writeDouble", void.class, blockBuilder, value);
