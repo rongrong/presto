@@ -15,9 +15,11 @@ package com.facebook.presto.operator.aggregation;
 
 import com.facebook.presto.metadata.MetadataManager;
 import com.facebook.presto.metadata.Signature;
+import com.facebook.presto.operator.aggregation.state.LongLongState;
 import com.facebook.presto.operator.aggregation.state.MaxOrMinByState;
 import com.facebook.presto.operator.aggregation.state.MaxOrMinByStateFactory;
 import com.facebook.presto.operator.aggregation.state.MaxOrMinByStateSerializer;
+import com.facebook.presto.operator.aggregation.state.TwoStatesMapping;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
@@ -34,6 +36,7 @@ import io.airlift.slice.Slices;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+import java.lang.invoke.MethodHandle;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -46,10 +49,12 @@ import static com.facebook.presto.block.BlockAssertions.createShortDecimalsBlock
 import static com.facebook.presto.block.BlockAssertions.createStringsBlock;
 import static com.facebook.presto.metadata.FunctionKind.AGGREGATE;
 import static com.facebook.presto.operator.aggregation.AggregationTestUtils.assertAggregation;
+import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
 import static com.facebook.presto.spi.type.TypeSignature.parseTypeSignature;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.facebook.presto.util.ImmutableCollectors.toImmutableSet;
+import static com.facebook.presto.util.Reflection.methodHandle;
 import static io.airlift.slice.SizeOf.SIZE_OF_DOUBLE;
 import static java.lang.Double.doubleToLongBits;
 import static java.lang.Double.longBitsToDouble;
@@ -124,6 +129,25 @@ public class TestMinMaxByAggregation
                 10.0,
                 createDoublesBlock(8.0, 9.0, 10.0, 11.0),
                 createDoublesBlock(-2.0, null, -1.0, null));
+    }
+
+    @Test
+    public void testMinLongLong()
+            throws Exception
+    {
+        InternalAggregationFunction function = METADATA.getFunctionRegistry().getAggregateFunctionImplementation(
+                new Signature("min_by", AGGREGATE, parseTypeSignature(StandardTypes.BIGINT), parseTypeSignature(StandardTypes.BIGINT), parseTypeSignature(StandardTypes.BIGINT)));
+//        assertAggregation(
+//                function,
+//                null,
+//                createDoublesBlock(null, null),
+//                createDoublesBlock(null, null));
+//
+        assertAggregation(
+                function,
+                5L,
+                createLongsBlock(3L, 2L, 5L, 3L),
+                createLongsBlock(5L, 4L, 2L, 3L));
     }
 
     @Test
