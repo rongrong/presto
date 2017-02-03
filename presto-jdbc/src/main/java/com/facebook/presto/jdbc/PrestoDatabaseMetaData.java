@@ -262,7 +262,6 @@ public class PrestoDatabaseMetaData
 
     @Override
     public String getSearchStringEscape()
-            throws SQLException
     {
         return "\\";
     }
@@ -1440,7 +1439,7 @@ public class PrestoDatabaseMetaData
         filters.add(filter.toString());
     }
 
-    private static void optionalStringLikeFilter(List<String> filters, String columnName, String value)
+    private void optionalStringLikeFilter(List<String> filters, String columnName, String value)
     {
         if (value != null) {
             filters.add(stringColumnLike(columnName, value));
@@ -1459,7 +1458,7 @@ public class PrestoDatabaseMetaData
         }
     }
 
-    private static void emptyStringLikeFilter(List<String> filters, String columnName, String value)
+    private void emptyStringLikeFilter(List<String> filters, String columnName, String value)
     {
         if (value != null) {
             if (value.isEmpty()) {
@@ -1479,11 +1478,13 @@ public class PrestoDatabaseMetaData
         return filter.toString();
     }
 
-    private static String stringColumnLike(String columnName, String pattern)
+    private String stringColumnLike(String columnName, String pattern)
     {
         StringBuilder filter = new StringBuilder();
         filter.append(columnName).append(" LIKE ");
         quoteStringLiteral(filter, pattern);
+        filter.append(" ESCAPE ");
+        quoteStringLiteral(filter, getSearchStringEscape());
         return filter.toString();
     }
 

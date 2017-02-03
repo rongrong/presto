@@ -755,12 +755,32 @@ public class TestDriver
         }
 
         try (Connection connection = createConnection()) {
-            try (ResultSet rs = connection.getMetaData().getColumns(TEST_CATALOG, "information_schema", "tables", "table_name")) {
+            try (ResultSet rs = connection.getMetaData().getColumns(null, "information_schema", "tabl_s", "table_name")) {
+                assertColumnMetadata(rs);
+                assertEquals(readRows(rs).size(), 3);
+            }
+        }
+
+        try (Connection connection = createConnection()) {
+            try (ResultSet rs = connection.getMetaData().getColumns(null, "information\\_schema", "tables", "table\\_name")) {
+                assertColumnMetadata(rs);
+                assertEquals(readRows(rs).size(), 3);
+            }
+        }
+
+        try (Connection connection = createConnection()) {
+            try (ResultSet rs = connection.getMetaData().getColumns(TEST_CATALOG, "information\\_s_hema", "tables", "table_name")) {
                 assertColumnMetadata(rs);
                 assertEquals(readRows(rs).size(), 1);
             }
         }
 
+        try (Connection connection = createConnection()) {
+            try (ResultSet rs = connection.getMetaData().getColumns(TEST_CATALOG, "information_schema", "tables", "table_name")) {
+                assertColumnMetadata(rs);
+                assertEquals(readRows(rs).size(), 1);
+            }
+        }
         try (Connection connection = createConnection()) {
             try (ResultSet rs = connection.getMetaData().getColumns(TEST_CATALOG, "inf%", "tables", "table_name")) {
                 assertColumnMetadata(rs);
