@@ -1075,6 +1075,11 @@ public class TestExpressionInterpreter
     {
         assertOptimizedEquals("unbound_string like 'abc'", "unbound_string = CAST('abc' AS VARCHAR)");
 
+        assertOptimizedEquals("unbound_string like 'a\\_b' escape '\\'", "unbound_string = CAST('a_b' AS VARCHAR)");
+        assertOptimizedEquals("unbound_string like 'a\\%b' escape '\\'", "unbound_string = CAST('a%b' AS VARCHAR)");
+        assertOptimizedEquals("unbound_string like 'a\\_\\\\b' escape '\\'", "unbound_string = CAST('a_\\b' AS VARCHAR)");
+        assertOptimizedEquals("unbound_string like 'a\\__b' escape '\\'", "unbound_string like 'a\\__b' escape '\\'");
+
         assertOptimizedEquals("bound_string like bound_pattern", "true");
         assertOptimizedEquals("'abc' like bound_pattern", "false");
 

@@ -99,6 +99,7 @@ import com.google.common.primitives.Primitives;
 import io.airlift.joni.Regex;
 import io.airlift.json.JsonCodec;
 import io.airlift.slice.Slice;
+import io.airlift.slice.Slices;
 
 import java.lang.invoke.MethodHandle;
 import java.util.ArrayList;
@@ -110,9 +111,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static com.facebook.presto.spi.StandardErrorCode.INVALID_FUNCTION_ARGUMENT;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.type.TypeSignature.parseTypeSignature;
 import static com.facebook.presto.spi.type.TypeUtils.writeNativeValue;
+import static com.facebook.presto.spi.type.VarcharType.createVarcharType;
 import static com.facebook.presto.sql.analyzer.ExpressionAnalyzer.createConstantAnalyzer;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.EXPRESSION_NOT_CONSTANT;
 import static com.facebook.presto.sql.analyzer.TypeSignatureProvider.fromTypes;
@@ -1034,25 +1037,23 @@ public class ExpressionInterpreter
             }
 
             // if pattern is a constant without % or _ replace with a comparison
-            if (pattern instanceof Slice && escape == null) {
-                String stringPattern = ((Slice) pattern).toStringUtf8();
-                if (!stringPattern.contains("%") && !stringPattern.contains("_")) {
-                    Type valueType = expressionTypes.get(node.getValue());
-                    Type patternType = expressionTypes.get(node.getPattern());
-                    TypeManager typeManager = metadata.getTypeManager();
-                    Optional<Type> commonSuperType = typeManager.getCommonSuperType(valueType, patternType);
-                    checkArgument(commonSuperType.isPresent(), "Missing super type when optimizing %s", node);
-                    Expression valueExpression = toExpression(value, valueType);
-                    Expression patternExpression = toExpression(pattern, patternType);
-                    Type superType = commonSuperType.get();
-                    if (!valueType.equals(superType)) {
-                        valueExpression = new Cast(valueExpression, superType.getTypeSignature().toString(), false, typeManager.isTypeOnlyCoercion(valueType, superType));
-                    }
-                    if (!patternType.equals(superType)) {
-                        patternExpression = new Cast(patternExpression, superType.getTypeSignature().toString(), false, typeManager.isTypeOnlyCoercion(patternType, superType));
-                    }
-                    return new ComparisonExpression(ComparisonExpressionType.EQUAL, valueExpression, patternExpression);
+            if (pattern instanceof Slice && (escape == null || escape instanceof Slice) && !isLikePattern((Slice) pattern, (Slice) escape)) {
+                Slice unescapedPattern = unescapeLikePattern((Slice) pattern, (Slice) escape);
+                Type valueType = expressionTypes.get(node.getValue());
+                Type patternType = createVarcharType(unescapedPattern.length());
+                TypeManager typeManager = metadata.getTypeManager();
+                Optional<Type> commonSuperType = typeManager.getCommonSuperType(valueType, patternType);
+                checkArgument(commonSuperType.isPresent(), "Missing super type when optimizing %s", node);
+                Expression valueExpression = toExpression(value, valueType);
+                Expression patternExpression = toExpression(unescapedPattern, patternType);
+                Type superType = commonSuperType.get();
+                if (!valueType.equals(superType)) {
+                    valueExpression = new Cast(valueExpression, superType.getTypeSignature().toString(), false, typeManager.isTypeOnlyCoercion(valueType, superType));
                 }
+                if (!patternType.equals(superType)) {
+                    patternExpression = new Cast(patternExpression, superType.getTypeSignature().toString(), false, typeManager.isTypeOnlyCoercion(patternType, superType));
+                }
+                return new ComparisonExpression(ComparisonExpressionType.EQUAL, valueExpression, patternExpression);
             }
 
             Expression optimizedEscape = null;
@@ -1064,6 +1065,61 @@ public class ExpressionInterpreter
                     toExpression(value, expressionTypes.get(node.getValue())),
                     toExpression(pattern, expressionTypes.get(node.getPattern())),
                     optimizedEscape);
+        }
+
+        private boolean isLikePattern(Slice pattern, Slice escape)
+        {
+            String stringPattern = pattern.toStringUtf8();
+            if (escape == null) {
+                return stringPattern.contains("%") || stringPattern.contains("_");
+            }
+
+            String stringEscape = escape.toStringUtf8();
+            if (stringEscape.length() != 1) {
+                throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "Escape must be empty or a single character");
+            }
+            char escapeChar = stringEscape.charAt(0);
+            boolean escaped = false;
+            for (char currentChar : stringPattern.toCharArray()) {
+                if (!escaped && (currentChar == escapeChar)) {
+                    escaped = true;
+                }
+                else if (escaped) {
+                    escaped = false;
+                }
+                else if ((currentChar == '%') || (currentChar == '_')) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private Slice unescapeLikePattern(Slice pattern, Slice escape)
+        {
+            if (escape == null) {
+                return pattern;
+            }
+
+            String stringEscape = escape.toStringUtf8();
+            if (stringEscape.length() != 1) {
+                throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "Escape must be empty or a single character");
+            }
+            char escapeChar = stringEscape.charAt(0);
+            String stringPattern = pattern.toStringUtf8();
+            StringBuilder unescapedPattern = new StringBuilder(stringPattern.length());
+            boolean escaped = false;
+            for (char currentChar : stringPattern.toCharArray()) {
+                if (!escaped && (currentChar == escapeChar)) {
+                    escaped = true;
+                }
+                else {
+                    unescapedPattern.append(currentChar);
+                    if (escaped) {
+                        escaped = false;
+                    }
+                }
+            }
+            return Slices.utf8Slice(unescapedPattern.toString());
         }
 
         private Regex getConstantPattern(LikePredicate node)
