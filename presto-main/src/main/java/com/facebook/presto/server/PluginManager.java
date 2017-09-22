@@ -18,6 +18,7 @@ import com.facebook.presto.connector.ConnectorManager;
 import com.facebook.presto.eventlistener.EventListenerManager;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
 import com.facebook.presto.metadata.Metadata;
+import com.facebook.presto.metadata.SessionPropertyManager;
 import com.facebook.presto.security.AccessControlManager;
 import com.facebook.presto.spi.Plugin;
 import com.facebook.presto.spi.block.BlockEncodingFactory;
@@ -26,6 +27,7 @@ import com.facebook.presto.spi.connector.ConnectorFactory;
 import com.facebook.presto.spi.eventlistener.EventListenerFactory;
 import com.facebook.presto.spi.resourceGroups.ResourceGroupConfigurationManagerFactory;
 import com.facebook.presto.spi.security.SystemAccessControlFactory;
+import com.facebook.presto.spi.session.SessionPropertyConfigurationManagerFactory;
 import com.facebook.presto.spi.type.ParametricType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.type.TypeRegistry;
@@ -77,6 +79,7 @@ public class PluginManager
     private final AccessControlManager accessControlManager;
     private final EventListenerManager eventListenerManager;
     private final BlockEncodingManager blockEncodingManager;
+    private final SessionPropertyManager sessionPropertyManager;
     private final TypeRegistry typeRegistry;
     private final ArtifactResolver resolver;
     private final File installedPluginsDir;
@@ -95,6 +98,7 @@ public class PluginManager
             AccessControlManager accessControlManager,
             EventListenerManager eventListenerManager,
             BlockEncodingManager blockEncodingManager,
+            SessionPropertyManager sessionPropertyManager,
             TypeRegistry typeRegistry)
     {
         requireNonNull(nodeInfo, "nodeInfo is null");
@@ -116,6 +120,7 @@ public class PluginManager
         this.accessControlManager = requireNonNull(accessControlManager, "accessControlManager is null");
         this.eventListenerManager = requireNonNull(eventListenerManager, "eventListenerManager is null");
         this.blockEncodingManager = requireNonNull(blockEncodingManager, "blockEncodingManager is null");
+        this.sessionPropertyManager = requireNonNull(sessionPropertyManager, "sessionPropertyManager is null");
         this.typeRegistry = requireNonNull(typeRegistry, "typeRegistry is null");
     }
 
@@ -193,6 +198,11 @@ public class PluginManager
         for (Class<?> functionClass : plugin.getFunctions()) {
             log.info("Registering functions from %s", functionClass.getName());
             metadata.addFunctions(extractFunctions(functionClass));
+        }
+
+        for (SessionPropertyConfigurationManagerFactory sessionConfigFactory : plugin.getSessionPropertyConfigurationManagerFactories()) {
+            log.info("Registering resource group configuration manager %s", sessionConfigFactory.getName());
+            sessionPropertyManager.addSessionPropertyConfigurationManager(sessionConfigFactory);
         }
 
         for (ResourceGroupConfigurationManagerFactory configurationManagerFactory : plugin.getResourceGroupConfigurationManagerFactories()) {
