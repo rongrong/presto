@@ -153,6 +153,7 @@ import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockEncodingSerde;
 import com.facebook.presto.spi.function.FunctionHandle;
+import com.facebook.presto.spi.function.FunctionImplementation;
 import com.facebook.presto.spi.function.FunctionMetadata;
 import com.facebook.presto.spi.function.FunctionNamespaceManager;
 import com.facebook.presto.spi.function.OperatorType;
@@ -291,6 +292,7 @@ import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_
 import static com.facebook.presto.spi.function.FunctionKind.AGGREGATE;
 import static com.facebook.presto.spi.function.FunctionKind.SCALAR;
 import static com.facebook.presto.spi.function.FunctionKind.WINDOW;
+import static com.facebook.presto.spi.function.FunctionLanguage.BUILTIN;
 import static com.facebook.presto.spi.function.OperatorType.tryGetOperatorType;
 import static com.facebook.presto.spi.type.TypeSignature.parseTypeSignature;
 import static com.facebook.presto.sql.analyzer.TypeSignatureProvider.fromTypeSignatures;
@@ -710,6 +712,7 @@ public class BuiltInFunctionNamespaceManager
                     signature.getArgumentTypes(),
                     signature.getReturnType(),
                     signature.getKind(),
+                    BUILTIN,
                     function.isDeterministic(),
                     function.isCalledOnNullInput());
         }
@@ -719,9 +722,17 @@ public class BuiltInFunctionNamespaceManager
                     signature.getArgumentTypes(),
                     signature.getReturnType(),
                     signature.getKind(),
+                    BUILTIN,
                     function.isDeterministic(),
                     function.isCalledOnNullInput());
         }
+    }
+
+    @Override
+    public FunctionImplementation getFunctionImplementation(FunctionHandle functionHandle)
+    {
+        checkArgument(functionHandle instanceof BuiltInFunctionHandle, "Expect StaticFunctionHandle");
+        return new BuiltInFunctionImplementation(getScalarFunctionImplementation(functionHandle));
     }
 
     public WindowFunctionSupplier getWindowFunctionImplementation(FunctionHandle functionHandle)

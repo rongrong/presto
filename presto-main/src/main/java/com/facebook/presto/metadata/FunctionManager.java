@@ -21,6 +21,7 @@ import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.block.BlockEncodingSerde;
 import com.facebook.presto.spi.function.FunctionHandle;
+import com.facebook.presto.spi.function.FunctionImplementation;
 import com.facebook.presto.spi.function.FunctionKind;
 import com.facebook.presto.spi.function.FunctionMetadata;
 import com.facebook.presto.spi.function.FunctionMetadataManager;
@@ -61,6 +62,7 @@ import static com.facebook.presto.spi.StandardErrorCode.AMBIGUOUS_FUNCTION_CALL;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_IMPLEMENTATION_MISSING;
 import static com.facebook.presto.spi.StandardErrorCode.FUNCTION_NOT_FOUND;
 import static com.facebook.presto.spi.function.FunctionKind.SCALAR;
+import static com.facebook.presto.spi.function.FunctionLanguage.BUILTIN;
 import static com.facebook.presto.spi.type.TypeSignature.parseTypeSignature;
 import static com.facebook.presto.sql.analyzer.TypeSignatureProvider.fromTypeSignatures;
 import static com.facebook.presto.sql.planner.LiteralEncoder.MAGIC_LITERAL_FUNCTION_PREFIX;
@@ -209,6 +211,11 @@ public class FunctionManager
         return functionNamespaces.get(functionHandle.getFunctionNamespace()).getFunctionMetadata(functionHandle);
     }
 
+    public FunctionImplementation getFunctionImplementation(FunctionHandle functionHandle)
+    {
+        return functionNamespaces.get(functionHandle.getFunctionNamespace()).getFunctionImplementation(functionHandle);
+    }
+
     public WindowFunctionSupplier getWindowFunctionImplementation(FunctionHandle functionHandle)
     {
         return builtInFunctionNamespace.getWindowFunctionImplementation(functionHandle);
@@ -221,7 +228,9 @@ public class FunctionManager
 
     public ScalarFunctionImplementation getScalarFunctionImplementation(FunctionHandle functionHandle)
     {
-        return builtInFunctionNamespace.getScalarFunctionImplementation(functionHandle);
+        FunctionImplementation implementation = getFunctionImplementation(functionHandle);
+        checkArgument(implementation.getLanguage().equals(BUILTIN), "getScalarFunctionImplementation only works for builtin functions");
+        return (ScalarFunctionImplementation) implementation.getImplementation();
     }
 
     @VisibleForTesting

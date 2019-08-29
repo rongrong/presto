@@ -105,13 +105,13 @@ public class ExpressionOptimizer
                 functionHandle = call.getFunctionHandle();
             }
 
-            ScalarFunctionImplementation function = functionManager.getScalarFunctionImplementation(functionHandle);
             List<RowExpression> arguments = call.getArguments().stream()
                     .map(argument -> argument.accept(this, context))
                     .collect(toImmutableList());
 
             // TODO: optimize function calls with lambda arguments. For example, apply(x -> x + 2, 1)
             if (Iterables.all(arguments, instanceOf(ConstantExpression.class)) && functionMetadata.isDeterministic()) {
+                ScalarFunctionImplementation function = functionManager.getScalarFunctionImplementation(functionHandle);
                 MethodHandle method = function.getMethodHandle();
 
                 if (method.type().parameterCount() > 0 && method.type().parameterType(0) == ConnectorSession.class) {

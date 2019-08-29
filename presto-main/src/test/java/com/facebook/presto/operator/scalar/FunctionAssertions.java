@@ -928,6 +928,7 @@ public final class FunctionAssertions
     {
         try {
             Supplier<CursorProcessor> cursorProcessor = compiler.compileCursorProcessor(
+                    TEST_SESSION,
                     filter,
                     ImmutableList.of(projection),
                     SOURCE_ID);

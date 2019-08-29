@@ -286,8 +286,7 @@ public class PickTableLayout
                     types,
                     predicate,
                     emptyList(),
-                    WarningCollector.NOOP,
-                    false);
+                    WarningCollector.NOOP);
 
             BiMap<VariableReferenceExpression, VariableReferenceExpression> symbolToColumnMapping = node.getAssignments().entrySet().stream()
                     .collect(toImmutableBiMap(

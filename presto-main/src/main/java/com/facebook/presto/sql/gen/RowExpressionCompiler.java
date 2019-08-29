@@ -19,6 +19,9 @@ import com.facebook.presto.bytecode.BytecodeNode;
 import com.facebook.presto.bytecode.Scope;
 import com.facebook.presto.bytecode.Variable;
 import com.facebook.presto.metadata.FunctionManager;
+import com.facebook.presto.metadata.Metadata;
+import com.facebook.presto.spi.function.FunctionImplementation;
+import com.facebook.presto.spi.function.FunctionMetadata;
 import com.facebook.presto.spi.relation.CallExpression;
 import com.facebook.presto.spi.relation.ConstantExpression;
 import com.facebook.presto.spi.relation.InputReferenceExpression;
@@ -44,6 +47,8 @@ import static com.facebook.presto.bytecode.instruction.Constant.loadString;
 import static com.facebook.presto.sql.gen.BytecodeUtils.generateWrite;
 import static com.facebook.presto.sql.gen.BytecodeUtils.loadConstant;
 import static com.facebook.presto.sql.gen.LambdaBytecodeGenerator.generateLambda;
+import static com.facebook.presto.sql.relational.SqlFunctionArgumentBinder.bindFunctionArguments;
+import static com.facebook.presto.sql.relational.SqlFunctionUtils.getSqlFunctionRowExpression;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 
@@ -53,7 +58,7 @@ public class RowExpressionCompiler
     private final CallSiteBinder callSiteBinder;
     private final CachedInstanceBinder cachedInstanceBinder;
     private final RowExpressionVisitor<BytecodeNode, Scope> fieldReferenceCompiler;
-    private final FunctionManager functionManager;
+    private final Metadata metadata;
     private final Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap;
 
     RowExpressionCompiler(
@@ -61,14 +66,14 @@ public class RowExpressionCompiler
             CallSiteBinder callSiteBinder,
             CachedInstanceBinder cachedInstanceBinder,
             RowExpressionVisitor<BytecodeNode, Scope> fieldReferenceCompiler,
-            FunctionManager functionManager,
+            Metadata metadata,
             Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap)
     {
         this.session = session;
         this.callSiteBinder = callSiteBinder;
         this.cachedInstanceBinder = cachedInstanceBinder;
         this.fieldReferenceCompiler = fieldReferenceCompiler;
-        this.functionManager = functionManager;
+        this.metadata = metadata;
         this.compiledLambdaMap = compiledLambdaMap;
     }
 
@@ -90,6 +95,7 @@ public class RowExpressionCompiler
         @Override
         public BytecodeNode visitCall(CallExpression call, Context context)
         {
+            FunctionManager functionManager = metadata.getFunctionManager();
             BytecodeGeneratorContext generatorContext = new BytecodeGeneratorContext(
                     RowExpressionCompiler.this,
                     context.getScope(),
@@ -97,7 +103,18 @@ public class RowExpressionCompiler
                     cachedInstanceBinder,
                     functionManager);
 
-            return (new FunctionCallCodeGenerator()).generateCall(call.getFunctionHandle(), generatorContext, call.getType(), call.getArguments(), context.getOutputBlockVariable());
+            FunctionImplementation implementation = functionManager.getFunctionImplementation(call.getFunctionHandle());
+            switch (implementation.getLanguage()) {
+                case BUILTIN:
+                    return (new FunctionCallCodeGenerator()).generateCall(call.getFunctionHandle(), generatorContext, call.getType(), call.getArguments(), context.getOutputBlockVariable());
+                case SQL:
+                    FunctionMetadata functionMetadata = functionManager.getFunctionMetadata(call.getFunctionHandle());
+                    RowExpression function = getSqlFunctionRowExpression(functionMetadata, implementation, metadata, session);
+                    return new RowExpressionCompiler(session, callSiteBinder, cachedInstanceBinder, fieldReferenceCompiler, metadata, compiledLambdaMap).compile(
+                            bindFunctionArguments(function, functionMetadata.getArgumentNames().get(), call.getArguments()), context.getScope(), context.getOutputBlockVariable(), context.getLambdaInterface());
+                default:
+                    throw new UnsupportedOperationException();
+            }
         }
 
         @Override
@@ -189,7 +206,7 @@ public class RowExpressionCompiler
                     context.getScope(),
                     callSiteBinder,
                     cachedInstanceBinder,
-                    functionManager);
+                    metadata.getFunctionManager());
 
             return generateLambda(
                     generatorContext,
@@ -219,6 +236,7 @@ public class RowExpressionCompiler
         @Override
         public BytecodeNode visitSpecialForm(SpecialFormExpression specialForm, Context context)
         {
+            FunctionManager functionManager = metadata.getFunctionManager();
             SpecialFormBytecodeGenerator generator;
             switch (specialForm.getForm()) {
                 // lazy evaluation

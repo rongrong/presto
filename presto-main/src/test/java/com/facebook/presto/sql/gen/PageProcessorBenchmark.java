@@ -124,7 +124,7 @@ public class PageProcessorBenchmark
         pageProcessor = new ExpressionCompiler(metadata, pageFunctionCompiler).compilePageProcessor(TEST_SESSION, Optional.of(getFilter(type)), projections).get();
 
         recordSet = new PageRecordSet(types, inputPage);
-        cursorProcessor = new ExpressionCompiler(metadata, pageFunctionCompiler).compileCursorProcessor(Optional.of(getFilter(type)), projections, "key").get();
+        cursorProcessor = new ExpressionCompiler(metadata, pageFunctionCompiler).compileCursorProcessor(TEST_SESSION, Optional.of(getFilter(type)), projections, "key").get();
     }
 
     @Benchmark

@@ -215,7 +215,7 @@ public class CursorProcessorCompiler
                     compiledLambdaMap.build(),
                     callSiteBinder,
                     cachedInstanceBinder,
-                    metadata.getFunctionManager());
+                    metadata);
             compiledLambdaMap.put(lambdaExpression, compiledLambda);
             counter++;
         }
@@ -245,7 +245,7 @@ public class CursorProcessorCompiler
                 callSiteBinder,
                 cachedInstanceBinder,
                 fieldReferenceCompiler(cursor),
-                metadata.getFunctionManager(),
+                metadata,
                 compiledLambdaMap);
 
         LabelNode end = new LabelNode("end");
@@ -287,7 +287,7 @@ public class CursorProcessorCompiler
                 callSiteBinder,
                 cachedInstanceBinder,
                 fieldReferenceCompiler(cursor),
-                metadata.getFunctionManager(),
+                metadata,
                 compiledLambdaMap);
 
         method.getBody()

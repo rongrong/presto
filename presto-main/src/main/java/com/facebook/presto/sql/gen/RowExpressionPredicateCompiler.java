@@ -20,7 +20,6 @@ import com.facebook.presto.bytecode.MethodDefinition;
 import com.facebook.presto.bytecode.Parameter;
 import com.facebook.presto.bytecode.Scope;
 import com.facebook.presto.bytecode.Variable;
-import com.facebook.presto.metadata.FunctionManager;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.operator.project.PageFieldsToInputParametersRewriter;
 import com.facebook.presto.spi.ConnectorSession;
@@ -70,19 +69,19 @@ import static java.util.Objects.requireNonNull;
 public class RowExpressionPredicateCompiler
         implements PredicateCompiler
 {
-    private final FunctionManager functionManager;
+    private final Metadata metadata;
 
     private final LoadingCache<RowExpression, Supplier<Predicate>> predicateCache;
 
     @Inject
     public RowExpressionPredicateCompiler(Metadata metadata)
     {
-        this(requireNonNull(metadata, "metadata is null").getFunctionManager(), 10_000);
+        this(requireNonNull(metadata, "metadata is null"), 10_000);
     }
 
-    public RowExpressionPredicateCompiler(FunctionManager functionManager, int predicateCacheSize)
+    public RowExpressionPredicateCompiler(Metadata metadata, int predicateCacheSize)
     {
-        this.functionManager = requireNonNull(functionManager, "functionManager is null");
+        this.metadata = requireNonNull(metadata, "metadata is null");
 
         if (predicateCacheSize > 0) {
             predicateCache = CacheBuilder.newBuilder()
@@ -193,7 +192,7 @@ public class RowExpressionPredicateCompiler
                 callSiteBinder,
                 cachedInstanceBinder,
                 fieldReferenceCompiler(callSiteBinder),
-                functionManager,
+                metadata,
                 compiledLambdaMap);
 
         Variable result = scope.declareVariable(boolean.class, "result");
@@ -223,7 +222,7 @@ public class RowExpressionPredicateCompiler
                     compiledLambdaMap.build(),
                     callSiteBinder,
                     cachedInstanceBinder,
-                    functionManager);
+                    metadata);
             compiledLambdaMap.put(lambdaExpression, compiledLambda);
             counter++;
         }

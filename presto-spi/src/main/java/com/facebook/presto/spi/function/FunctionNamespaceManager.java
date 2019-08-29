@@ -45,4 +45,6 @@ public interface FunctionNamespaceManager
     FunctionHandle getFunctionHandle(QueryId queryId, Signature signature);
 
     FunctionMetadata getFunctionMetadata(FunctionHandle functionHandle);
+
+    FunctionImplementation getFunctionImplementation(FunctionHandle functionHandle);
 }
