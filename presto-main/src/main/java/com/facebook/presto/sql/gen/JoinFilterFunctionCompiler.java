@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.sql.gen;
 
+import com.facebook.presto.Session;
 import com.facebook.presto.bytecode.BytecodeBlock;
 import com.facebook.presto.bytecode.BytecodeNode;
 import com.facebook.presto.bytecode.ClassDefinition;
@@ -81,7 +82,7 @@ public class JoinFilterFunctionCompiler
     private final LoadingCache<JoinFilterCacheKey, JoinFilterFunctionFactory> joinFilterFunctionFactories = CacheBuilder.newBuilder()
             .recordStats()
             .maximumSize(1000)
-            .build(CacheLoader.from(key -> internalCompileFilterFunctionFactory(key.getFilter(), key.getLeftBlocksSize())));
+            .build(CacheLoader.from(key -> internalCompileFilterFunctionFactory(key.getSession(), key.getFilter(), key.getLeftBlocksSize())));
 
     @Managed
     @Nested
@@ -90,18 +91,18 @@ public class JoinFilterFunctionCompiler
         return new CacheStatsMBean(joinFilterFunctionFactories);
     }
 
-    public JoinFilterFunctionFactory compileJoinFilterFunction(RowExpression filter, int leftBlocksSize)
+    public JoinFilterFunctionFactory compileJoinFilterFunction(Session session, RowExpression filter, int leftBlocksSize)
     {
-        return joinFilterFunctionFactories.getUnchecked(new JoinFilterCacheKey(filter, leftBlocksSize));
+        return joinFilterFunctionFactories.getUnchecked(new JoinFilterCacheKey(session, filter, leftBlocksSize));
     }
 
-    private JoinFilterFunctionFactory internalCompileFilterFunctionFactory(RowExpression filterExpression, int leftBlocksSize)
+    private JoinFilterFunctionFactory internalCompileFilterFunctionFactory(Session session, RowExpression filterExpression, int leftBlocksSize)
     {
-        Class<? extends InternalJoinFilterFunction> internalJoinFilterFunction = compileInternalJoinFilterFunction(filterExpression, leftBlocksSize);
+        Class<? extends InternalJoinFilterFunction> internalJoinFilterFunction = compileInternalJoinFilterFunction(session, filterExpression, leftBlocksSize);
         return new IsolatedJoinFilterFunctionFactory(internalJoinFilterFunction);
     }
 
-    private Class<? extends InternalJoinFilterFunction> compileInternalJoinFilterFunction(RowExpression filterExpression, int leftBlocksSize)
+    private Class<? extends InternalJoinFilterFunction> compileInternalJoinFilterFunction(Session session, RowExpression filterExpression, int leftBlocksSize)
     {
         ClassDefinition classDefinition = new ClassDefinition(
                 a(PUBLIC, FINAL),
@@ -111,7 +112,7 @@ public class JoinFilterFunctionCompiler
 
         CallSiteBinder callSiteBinder = new CallSiteBinder();
 
-        new JoinFilterFunctionCompiler(metadata).generateMethods(classDefinition, callSiteBinder, filterExpression, leftBlocksSize);
+        new JoinFilterFunctionCompiler(metadata).generateMethods(session, classDefinition, callSiteBinder, filterExpression, leftBlocksSize);
 
         //
         // toString method
@@ -127,14 +128,14 @@ public class JoinFilterFunctionCompiler
         return defineClass(classDefinition, InternalJoinFilterFunction.class, callSiteBinder.getBindings(), getClass().getClassLoader());
     }
 
-    private void generateMethods(ClassDefinition classDefinition, CallSiteBinder callSiteBinder, RowExpression filter, int leftBlocksSize)
+    private void generateMethods(Session session, ClassDefinition classDefinition, CallSiteBinder callSiteBinder, RowExpression filter, int leftBlocksSize)
     {
         CachedInstanceBinder cachedInstanceBinder = new CachedInstanceBinder(classDefinition, callSiteBinder);
 
         FieldDefinition sessionField = classDefinition.declareField(a(PRIVATE, FINAL), "session", ConnectorSession.class);
 
-        Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap = generateMethodsForLambda(classDefinition, callSiteBinder, cachedInstanceBinder, leftBlocksSize, filter);
-        generateFilterMethod(classDefinition, callSiteBinder, cachedInstanceBinder, compiledLambdaMap, filter, leftBlocksSize, sessionField);
+        Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap = generateMethodsForLambda(session, classDefinition, callSiteBinder, cachedInstanceBinder, leftBlocksSize, filter);
+        generateFilterMethod(session, classDefinition, callSiteBinder, cachedInstanceBinder, compiledLambdaMap, filter, leftBlocksSize, sessionField);
 
         generateConstructor(classDefinition, sessionField, cachedInstanceBinder);
     }
@@ -160,6 +161,7 @@ public class JoinFilterFunctionCompiler
     }
 
     private void generateFilterMethod(
+            Session session,
             ClassDefinition classDefinition,
             CallSiteBinder callSiteBinder,
             CachedInstanceBinder cachedInstanceBinder,
@@ -193,6 +195,7 @@ public class JoinFilterFunctionCompiler
         scope.declareVariable("session", body, method.getThis().getField(sessionField));
 
         RowExpressionCompiler compiler = new RowExpressionCompiler(
+                session,
                 callSiteBinder,
                 cachedInstanceBinder,
                 fieldReferenceCompiler(callSiteBinder, leftPosition, leftPage, rightPosition, rightPage, leftBlocksSize),
@@ -211,6 +214,7 @@ public class JoinFilterFunctionCompiler
     }
 
     private Map<LambdaDefinitionExpression, CompiledLambda> generateMethodsForLambda(
+            Session session,
             ClassDefinition containerClassDefinition,
             CallSiteBinder callSiteBinder,
             CachedInstanceBinder cachedInstanceBinder,
@@ -223,6 +227,7 @@ public class JoinFilterFunctionCompiler
         int counter = 0;
         for (LambdaDefinitionExpression lambdaExpression : lambdaExpressions) {
             CompiledLambda compiledLambda = LambdaBytecodeGenerator.preGenerateLambdaExpression(
+                    session,
                     lambdaExpression,
                     "lambda_" + counter,
                     containerClassDefinition,
@@ -272,13 +277,20 @@ public class JoinFilterFunctionCompiler
 
     private static final class JoinFilterCacheKey
     {
+        private final Session session;
         private final RowExpression filter;
         private final int leftBlocksSize;
 
-        public JoinFilterCacheKey(RowExpression filter, int leftBlocksSize)
+        public JoinFilterCacheKey(Session session, RowExpression filter, int leftBlocksSize)
         {
-            this.filter = requireNonNull(filter, "filter can not be null");
+            this.session = requireNonNull(session, "session is null");
+            this.filter = requireNonNull(filter, "filter is null");
             this.leftBlocksSize = leftBlocksSize;
+        }
+
+        public Session getSession()
+        {
+            return session;
         }
 
         public RowExpression getFilter()
@@ -302,19 +314,21 @@ public class JoinFilterFunctionCompiler
             }
             JoinFilterCacheKey that = (JoinFilterCacheKey) o;
             return leftBlocksSize == that.leftBlocksSize &&
-                    Objects.equals(filter, that.filter);
+                    Objects.equals(filter, that.filter) &&
+                    Objects.equals(session, that.session);
         }
 
         @Override
         public int hashCode()
         {
-            return Objects.hash(leftBlocksSize, filter);
+            return Objects.hash(leftBlocksSize, filter, session);
         }
 
         @Override
         public String toString()
         {
             return toStringHelper(this)
+                    .add("session", session)
                     .add("filter", filter)
                     .add("leftBlocksSize", leftBlocksSize)
                     .toString();

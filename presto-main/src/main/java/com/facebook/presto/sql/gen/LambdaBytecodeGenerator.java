@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.sql.gen;
 
+import com.facebook.presto.Session;
 import com.facebook.presto.bytecode.Access;
 import com.facebook.presto.bytecode.BytecodeBlock;
 import com.facebook.presto.bytecode.BytecodeNode;
@@ -80,6 +81,7 @@ public class LambdaBytecodeGenerator
     }
 
     public static Map<LambdaDefinitionExpression, CompiledLambda> generateMethodsForLambda(
+            Session session,
             ClassDefinition containerClassDefinition,
             CallSiteBinder callSiteBinder,
             CachedInstanceBinder cachedInstanceBinder,
@@ -92,6 +94,7 @@ public class LambdaBytecodeGenerator
         int counter = 0;
         for (LambdaDefinitionExpression lambdaExpression : lambdaExpressions) {
             CompiledLambda compiledLambda = LambdaBytecodeGenerator.preGenerateLambdaExpression(
+                    session,
                     lambdaExpression,
                     "lambda_" + counter,
                     containerClassDefinition,
@@ -110,6 +113,7 @@ public class LambdaBytecodeGenerator
      * @return a MethodHandle field that represents the lambda expression
      */
     public static CompiledLambda preGenerateLambdaExpression(
+            Session session,
             LambdaDefinitionExpression lambdaExpression,
             String methodName,
             ClassDefinition classDefinition,
@@ -131,6 +135,7 @@ public class LambdaBytecodeGenerator
         }
 
         RowExpressionCompiler innerExpressionCompiler = new RowExpressionCompiler(
+                session,
                 callSiteBinder,
                 cachedInstanceBinder,
                 variableReferenceCompiler(parameterMapBuilder.build()),
@@ -231,7 +236,7 @@ public class LambdaBytecodeGenerator
         return block;
     }
 
-    public static Class<? extends LambdaProvider> compileLambdaProvider(LambdaDefinitionExpression lambdaExpression, FunctionManager functionManager, Class lambdaInterface)
+    public static Class<? extends LambdaProvider> compileLambdaProvider(Session session, LambdaDefinitionExpression lambdaExpression, FunctionManager functionManager, Class lambdaInterface)
     {
         ClassDefinition lambdaProviderClassDefinition = new ClassDefinition(
                 a(PUBLIC, Access.FINAL),
@@ -245,6 +250,7 @@ public class LambdaBytecodeGenerator
         CachedInstanceBinder cachedInstanceBinder = new CachedInstanceBinder(lambdaProviderClassDefinition, callSiteBinder);
 
         Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap = generateMethodsForLambda(
+                session,
                 lambdaProviderClassDefinition,
                 callSiteBinder,
                 cachedInstanceBinder,
@@ -263,6 +269,7 @@ public class LambdaBytecodeGenerator
         scope.declareVariable("session", body, method.getThis().getField(sessionField));
 
         RowExpressionCompiler rowExpressionCompiler = new RowExpressionCompiler(
+                session,
                 callSiteBinder,
                 cachedInstanceBinder,
                 variableReferenceCompiler(ImmutableMap.of()),

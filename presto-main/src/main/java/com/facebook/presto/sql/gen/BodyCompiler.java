@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.sql.gen;
 
+import com.facebook.presto.Session;
 import com.facebook.presto.bytecode.ClassDefinition;
 import com.facebook.presto.spi.relation.RowExpression;
 
@@ -20,5 +21,5 @@ import java.util.List;
 
 public interface BodyCompiler
 {
-    void generateMethods(ClassDefinition classDefinition, CallSiteBinder callSiteBinder, RowExpression filter, List<RowExpression> projections);
+    void generateMethods(Session session, ClassDefinition classDefinition, CallSiteBinder callSiteBinder, RowExpression filter, List<RowExpression> projections);
 }

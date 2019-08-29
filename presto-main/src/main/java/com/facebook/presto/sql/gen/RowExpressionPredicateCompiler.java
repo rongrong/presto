@@ -166,7 +166,7 @@ public class RowExpressionPredicateCompiler
     {
         Map<LambdaDefinitionExpression, LambdaBytecodeGenerator.CompiledLambda> compiledLambdaMap = generateMethodsForLambda(classDefinition, callSiteBinder, cachedInstanceBinder, predicate);
 
-        Parameter session = arg("session", ConnectorSession.class);
+        Parameter connetorSession = arg("session", ConnectorSession.class);
         Parameter page = arg("page", Page.class);
         Parameter position = arg("position", int.class);
 
@@ -175,7 +175,7 @@ public class RowExpressionPredicateCompiler
                 "evaluate",
                 type(boolean.class),
                 ImmutableList.<Parameter>builder()
-                        .add(session)
+                        .add(connetorSession)
                         .add(page)
                         .add(position)
                         .build());
@@ -189,6 +189,7 @@ public class RowExpressionPredicateCompiler
 
         Variable wasNullVariable = scope.declareVariable("wasNull", body, constantFalse());
         RowExpressionCompiler compiler = new RowExpressionCompiler(
+                null,
                 callSiteBinder,
                 cachedInstanceBinder,
                 fieldReferenceCompiler(callSiteBinder),
@@ -215,6 +216,7 @@ public class RowExpressionPredicateCompiler
         int counter = 0;
         for (LambdaDefinitionExpression lambdaExpression : lambdaExpressions) {
             LambdaBytecodeGenerator.CompiledLambda compiledLambda = LambdaBytecodeGenerator.preGenerateLambdaExpression(
+                    null,
                     lambdaExpression,
                     "lambda_" + counter,
                     containerClassDefinition,

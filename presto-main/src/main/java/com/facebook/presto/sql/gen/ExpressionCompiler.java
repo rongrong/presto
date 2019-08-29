@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.sql.gen;
 
+import com.facebook.presto.Session;
 import com.facebook.presto.bytecode.ClassDefinition;
 import com.facebook.presto.bytecode.CompilationException;
 import com.facebook.presto.metadata.Metadata;
@@ -66,7 +67,7 @@ public class ExpressionCompiler
         this.cursorProcessors = CacheBuilder.newBuilder()
                 .recordStats()
                 .maximumSize(1000)
-                .build(CacheLoader.from(key -> compile(key.getFilter(), key.getProjections(), new CursorProcessorCompiler(metadata), CursorProcessor.class)));
+                .build(CacheLoader.from(key -> compile(key.getSession(), key.getFilter(), key.getProjections(), new CursorProcessorCompiler(metadata), CursorProcessor.class)));
         this.cacheStatsMBean = new CacheStatsMBean(cursorProcessors);
     }
 
@@ -77,9 +78,9 @@ public class ExpressionCompiler
         return cacheStatsMBean;
     }
 
-    public Supplier<CursorProcessor> compileCursorProcessor(Optional<RowExpression> filter, List<? extends RowExpression> projections, Object uniqueKey)
+    public Supplier<CursorProcessor> compileCursorProcessor(Session session, Optional<RowExpression> filter, List<? extends RowExpression> projections, Object uniqueKey)
     {
-        Class<? extends CursorProcessor> cursorProcessor = cursorProcessors.getUnchecked(new CacheKey(filter, projections, uniqueKey));
+        Class<? extends CursorProcessor> cursorProcessor = cursorProcessors.getUnchecked(new CacheKey(filter, projections, uniqueKey, session));
         return () -> {
             try {
                 return cursorProcessor.getConstructor().newInstance();
@@ -90,20 +91,21 @@ public class ExpressionCompiler
         };
     }
 
-    public Supplier<PageProcessor> compilePageProcessor(Optional<RowExpression> filter, List<? extends RowExpression> projections, Optional<String> classNameSuffix)
+    public Supplier<PageProcessor> compilePageProcessor(Session session, Optional<RowExpression> filter, List<? extends RowExpression> projections, Optional<String> classNameSuffix)
     {
-        return compilePageProcessor(filter, projections, classNameSuffix, OptionalInt.empty());
+        return compilePageProcessor(session, filter, projections, classNameSuffix, OptionalInt.empty());
     }
 
     private Supplier<PageProcessor> compilePageProcessor(
+            Session session,
             Optional<RowExpression> filter,
             List<? extends RowExpression> projections,
             Optional<String> classNameSuffix,
             OptionalInt initialBatchSize)
     {
-        Optional<Supplier<PageFilter>> filterFunctionSupplier = filter.map(expression -> pageFunctionCompiler.compileFilter(expression, classNameSuffix));
+        Optional<Supplier<PageFilter>> filterFunctionSupplier = filter.map(expression -> pageFunctionCompiler.compileFilter(session, expression, classNameSuffix));
         List<Supplier<PageProjection>> pageProjectionSuppliers = projections.stream()
-                .map(projection -> pageFunctionCompiler.compileProjection(projection, classNameSuffix))
+                .map(projection -> pageFunctionCompiler.compileProjection(session, projection, classNameSuffix))
                 .collect(toImmutableList());
 
         return () -> {
@@ -115,22 +117,22 @@ public class ExpressionCompiler
         };
     }
 
-    public Supplier<PageProcessor> compilePageProcessor(Optional<RowExpression> filter, List<? extends RowExpression> projections)
+    public Supplier<PageProcessor> compilePageProcessor(Session session, Optional<RowExpression> filter, List<? extends RowExpression> projections)
     {
-        return compilePageProcessor(filter, projections, Optional.empty());
+        return compilePageProcessor(session, filter, projections, Optional.empty());
     }
 
     @VisibleForTesting
-    public Supplier<PageProcessor> compilePageProcessor(Optional<RowExpression> filter, List<? extends RowExpression> projections, int initialBatchSize)
+    public Supplier<PageProcessor> compilePageProcessor(Session session, Optional<RowExpression> filter, List<? extends RowExpression> projections, int initialBatchSize)
     {
-        return compilePageProcessor(filter, projections, Optional.empty(), OptionalInt.of(initialBatchSize));
+        return compilePageProcessor(session, filter, projections, Optional.empty(), OptionalInt.of(initialBatchSize));
     }
 
-    private <T> Class<? extends T> compile(Optional<RowExpression> filter, List<RowExpression> projections, BodyCompiler bodyCompiler, Class<? extends T> superType)
+    private <T> Class<? extends T> compile(Session session, Optional<RowExpression> filter, List<RowExpression> projections, BodyCompiler bodyCompiler, Class<? extends T> superType)
     {
         // create filter and project page iterator class
         try {
-            return compileProcessor(filter.orElse(constant(true, BOOLEAN)), projections, bodyCompiler, superType);
+            return compileProcessor(session, filter.orElse(constant(true, BOOLEAN)), projections, bodyCompiler, superType);
         }
         catch (CompilationException e) {
             throw new PrestoException(COMPILER_ERROR, e.getCause());
@@ -138,6 +140,7 @@ public class ExpressionCompiler
     }
 
     private <T> Class<? extends T> compileProcessor(
+            Session session,
             RowExpression filter,
             List<RowExpression> projections,
             BodyCompiler bodyCompiler,
@@ -150,7 +153,7 @@ public class ExpressionCompiler
                 type(superType));
 
         CallSiteBinder callSiteBinder = new CallSiteBinder();
-        bodyCompiler.generateMethods(classDefinition, callSiteBinder, filter, projections);
+        bodyCompiler.generateMethods(session, classDefinition, callSiteBinder, filter, projections);
 
         //
         // toString method
@@ -180,12 +183,14 @@ public class ExpressionCompiler
         private final Optional<RowExpression> filter;
         private final List<RowExpression> projections;
         private final Object uniqueKey;
+        private final Session session;
 
-        private CacheKey(Optional<RowExpression> filter, List<? extends RowExpression> projections, Object uniqueKey)
+        private CacheKey(Optional<RowExpression> filter, List<? extends RowExpression> projections, Object uniqueKey, Session session)
         {
             this.filter = filter;
             this.uniqueKey = uniqueKey;
             this.projections = ImmutableList.copyOf(projections);
+            this.session = session;
         }
 
         private Optional<RowExpression> getFilter()
@@ -198,10 +203,15 @@ public class ExpressionCompiler
             return projections;
         }
 
+        public Session getSession()
+        {
+            return session;
+        }
+
         @Override
         public int hashCode()
         {
-            return Objects.hash(filter, projections, uniqueKey);
+            return Objects.hash(filter, projections, uniqueKey, session);
         }
 
         @Override
@@ -216,7 +226,8 @@ public class ExpressionCompiler
             CacheKey other = (CacheKey) obj;
             return Objects.equals(this.filter, other.filter) &&
                     Objects.equals(this.projections, other.projections) &&
-                    Objects.equals(this.uniqueKey, other.uniqueKey);
+                    Objects.equals(this.uniqueKey, other.uniqueKey) &&
+                    Objects.equals(this.session, other.session);
         }
 
         @Override
@@ -226,6 +237,7 @@ public class ExpressionCompiler
                     .add("filter", filter)
                     .add("projections", projections)
                     .add("uniqueKey", uniqueKey)
+                    .add("session", session)
                     .toString();
         }
     }

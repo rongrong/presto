@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.sql.gen;
 
+import com.facebook.presto.Session;
 import com.facebook.presto.bytecode.BytecodeBlock;
 import com.facebook.presto.bytecode.BytecodeNode;
 import com.facebook.presto.bytecode.ClassDefinition;
@@ -100,11 +101,23 @@ public class PageFunctionCompiler
     private final Metadata metadata;
     private final DeterminismEvaluator determinismEvaluator;
 
-    private final LoadingCache<RowExpression, Supplier<PageProjection>> projectionCache;
-    private final LoadingCache<RowExpression, Supplier<PageFilter>> filterCache;
+    private final LoadingCache<CacheKey, Supplier<PageProjection>> projectionCache;
+    private final LoadingCache<CacheKey, Supplier<PageFilter>> filterCache;
 
     private final CacheStatsMBean projectionCacheStats;
     private final CacheStatsMBean filterCacheStats;
+
+    private static class CacheKey
+    {
+        private final RowExpression expression;
+        private final Session session;
+
+        public CacheKey(Session session, RowExpression expression)
+        {
+            this.session = requireNonNull(session, "session is null");
+            this.expression = requireNonNull(expression, "expression is null");
+        }
+    }
 
     @Inject
     public PageFunctionCompiler(Metadata metadata, CompilerConfig config)
@@ -121,7 +134,7 @@ public class PageFunctionCompiler
             projectionCache = CacheBuilder.newBuilder()
                     .recordStats()
                     .maximumSize(expressionCacheSize)
-                    .build(CacheLoader.from(projection -> compileProjectionInternal(projection, Optional.empty())));
+                    .build(CacheLoader.from(projection -> compileProjectionInternal(projection.session, projection.expression, Optional.empty())));
             projectionCacheStats = new CacheStatsMBean(projectionCache);
         }
         else {
@@ -133,7 +146,7 @@ public class PageFunctionCompiler
             filterCache = CacheBuilder.newBuilder()
                     .recordStats()
                     .maximumSize(expressionCacheSize)
-                    .build(CacheLoader.from(filter -> compileFilterInternal(filter, Optional.empty())));
+                    .build(CacheLoader.from(filter -> compileFilterInternal(filter.session, filter.expression, Optional.empty())));
             filterCacheStats = new CacheStatsMBean(filterCache);
         }
         else {
@@ -158,15 +171,15 @@ public class PageFunctionCompiler
         return filterCacheStats;
     }
 
-    public Supplier<PageProjection> compileProjection(RowExpression projection, Optional<String> classNameSuffix)
+    public Supplier<PageProjection> compileProjection(Session session, RowExpression projection, Optional<String> classNameSuffix)
     {
         if (projectionCache == null) {
-            return compileProjectionInternal(projection, classNameSuffix);
+            return compileProjectionInternal(session, projection, classNameSuffix);
         }
-        return projectionCache.getUnchecked(projection);
+        return projectionCache.getUnchecked(new CacheKey(session, projection));
     }
 
-    private Supplier<PageProjection> compileProjectionInternal(RowExpression projection, Optional<String> classNameSuffix)
+    private Supplier<PageProjection> compileProjectionInternal(Session session, RowExpression projection, Optional<String> classNameSuffix)
     {
         requireNonNull(projection, "projection is null");
 
@@ -187,7 +200,7 @@ public class PageFunctionCompiler
         CallSiteBinder callSiteBinder = new CallSiteBinder();
 
         // generate Work
-        ClassDefinition pageProjectionWorkDefinition = definePageProjectWorkClass(result.getRewrittenExpression(), callSiteBinder, classNameSuffix);
+        ClassDefinition pageProjectionWorkDefinition = definePageProjectWorkClass(session, result.getRewrittenExpression(), callSiteBinder, classNameSuffix);
 
         Class<? extends Work> pageProjectionWorkClass;
         try {
@@ -209,7 +222,7 @@ public class PageFunctionCompiler
         return makeClassName("PageProjectionWork", classNameSuffix);
     }
 
-    private ClassDefinition definePageProjectWorkClass(RowExpression projection, CallSiteBinder callSiteBinder, Optional<String> classNameSuffix)
+    private ClassDefinition definePageProjectWorkClass(Session session, RowExpression projection, CallSiteBinder callSiteBinder, Optional<String> classNameSuffix)
     {
         ClassDefinition classDefinition = new ClassDefinition(
                 a(PUBLIC, FINAL),
@@ -218,7 +231,7 @@ public class PageFunctionCompiler
                 type(Work.class));
 
         FieldDefinition blockBuilderField = classDefinition.declareField(a(PRIVATE), "blockBuilder", BlockBuilder.class);
-        FieldDefinition sessionField = classDefinition.declareField(a(PRIVATE), "session", ConnectorSession.class);
+        FieldDefinition connectorSessionField = classDefinition.declareField(a(PRIVATE), "session", ConnectorSession.class);
         FieldDefinition pageField = classDefinition.declareField(a(PRIVATE), "page", Page.class);
         FieldDefinition selectedPositionsField = classDefinition.declareField(a(PRIVATE), "selectedPositions", SelectedPositions.class);
         FieldDefinition nextIndexOrPositionField = classDefinition.declareField(a(PRIVATE), "nextIndexOrPosition", int.class);
@@ -227,23 +240,23 @@ public class PageFunctionCompiler
         CachedInstanceBinder cachedInstanceBinder = new CachedInstanceBinder(classDefinition, callSiteBinder);
 
         // process
-        generateProcessMethod(classDefinition, blockBuilderField, sessionField, pageField, selectedPositionsField, nextIndexOrPositionField, resultField);
+        generateProcessMethod(classDefinition, blockBuilderField, connectorSessionField, pageField, selectedPositionsField, nextIndexOrPositionField, resultField);
 
         // getResult
         MethodDefinition method = classDefinition.declareMethod(a(PUBLIC), "getResult", type(Object.class), ImmutableList.of());
         method.getBody().append(method.getThis().getField(resultField)).ret(Object.class);
 
         // evaluate
-        Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap = generateMethodsForLambda(classDefinition, callSiteBinder, cachedInstanceBinder, projection);
-        generateEvaluateMethod(classDefinition, callSiteBinder, cachedInstanceBinder, compiledLambdaMap, projection, blockBuilderField);
+        Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap = generateMethodsForLambda(session, classDefinition, callSiteBinder, cachedInstanceBinder, projection);
+        generateEvaluateMethod(session, classDefinition, callSiteBinder, cachedInstanceBinder, compiledLambdaMap, projection, blockBuilderField);
 
         // constructor
         Parameter blockBuilder = arg("blockBuilder", BlockBuilder.class);
-        Parameter session = arg("session", ConnectorSession.class);
+        Parameter connectorSession = arg("session", ConnectorSession.class);
         Parameter page = arg("page", Page.class);
         Parameter selectedPositions = arg("selectedPositions", SelectedPositions.class);
 
-        MethodDefinition constructorDefinition = classDefinition.declareConstructor(a(PUBLIC), blockBuilder, session, page, selectedPositions);
+        MethodDefinition constructorDefinition = classDefinition.declareConstructor(a(PUBLIC), blockBuilder, connectorSession, page, selectedPositions);
 
         BytecodeBlock body = constructorDefinition.getBody();
         Variable thisVariable = constructorDefinition.getThis();
@@ -252,7 +265,7 @@ public class PageFunctionCompiler
                 .append(thisVariable)
                 .invokeConstructor(Object.class)
                 .append(thisVariable.setField(blockBuilderField, blockBuilder))
-                .append(thisVariable.setField(sessionField, session))
+                .append(thisVariable.setField(connectorSessionField, connectorSession))
                 .append(thisVariable.setField(pageField, page))
                 .append(thisVariable.setField(selectedPositionsField, selectedPositions))
                 .append(thisVariable.setField(nextIndexOrPositionField, selectedPositions.invoke("getOffset", int.class)))
@@ -313,6 +326,7 @@ public class PageFunctionCompiler
     }
 
     private MethodDefinition generateEvaluateMethod(
+            Session session,
             ClassDefinition classDefinition,
             CallSiteBinder callSiteBinder,
             CachedInstanceBinder cachedInstanceBinder,
@@ -320,7 +334,7 @@ public class PageFunctionCompiler
             RowExpression projection,
             FieldDefinition blockBuilder)
     {
-        Parameter session = arg("session", ConnectorSession.class);
+        Parameter connectorSession = arg("session", ConnectorSession.class);
         Parameter page = arg("page", Page.class);
         Parameter position = arg("position", int.class);
 
@@ -329,7 +343,7 @@ public class PageFunctionCompiler
                 "evaluate",
                 type(void.class),
                 ImmutableList.<Parameter>builder()
-                        .add(session)
+                        .add(connectorSession)
                         .add(page)
                         .add(position)
                         .build());
@@ -344,6 +358,7 @@ public class PageFunctionCompiler
 
         scope.declareVariable("wasNull", body, constantFalse());
         RowExpressionCompiler compiler = new RowExpressionCompiler(
+                session,
                 callSiteBinder,
                 cachedInstanceBinder,
                 fieldReferenceCompiler(callSiteBinder),
@@ -357,22 +372,22 @@ public class PageFunctionCompiler
         return method;
     }
 
-    public Supplier<PageFilter> compileFilter(RowExpression filter, Optional<String> classNameSuffix)
+    public Supplier<PageFilter> compileFilter(Session session, RowExpression filter, Optional<String> classNameSuffix)
     {
         if (filterCache == null) {
-            return compileFilterInternal(filter, classNameSuffix);
+            return compileFilterInternal(session, filter, classNameSuffix);
         }
-        return filterCache.getUnchecked(filter);
+        return filterCache.getUnchecked(new CacheKey(session, filter));
     }
 
-    private Supplier<PageFilter> compileFilterInternal(RowExpression filter, Optional<String> classNameSuffix)
+    private Supplier<PageFilter> compileFilterInternal(Session session, RowExpression filter, Optional<String> classNameSuffix)
     {
         requireNonNull(filter, "filter is null");
 
         PageFieldsToInputParametersRewriter.Result result = rewritePageFieldsToInputParameters(filter);
 
         CallSiteBinder callSiteBinder = new CallSiteBinder();
-        ClassDefinition classDefinition = defineFilterClass(result.getRewrittenExpression(), result.getInputChannels(), callSiteBinder, classNameSuffix);
+        ClassDefinition classDefinition = defineFilterClass(session, result.getRewrittenExpression(), result.getInputChannels(), callSiteBinder, classNameSuffix);
 
         Class<? extends PageFilter> functionClass;
         try {
@@ -397,7 +412,7 @@ public class PageFunctionCompiler
         return makeClassName(PageFilter.class.getSimpleName(), classNameSuffix);
     }
 
-    private ClassDefinition defineFilterClass(RowExpression filter, InputChannels inputChannels, CallSiteBinder callSiteBinder, Optional<String> classNameSuffix)
+    private ClassDefinition defineFilterClass(Session session, RowExpression filter, InputChannels inputChannels, CallSiteBinder callSiteBinder, Optional<String> classNameSuffix)
     {
         ClassDefinition classDefinition = new ClassDefinition(
                 a(PUBLIC, FINAL),
@@ -407,8 +422,8 @@ public class PageFunctionCompiler
 
         CachedInstanceBinder cachedInstanceBinder = new CachedInstanceBinder(classDefinition, callSiteBinder);
 
-        Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap = generateMethodsForLambda(classDefinition, callSiteBinder, cachedInstanceBinder, filter);
-        generateFilterMethod(classDefinition, callSiteBinder, cachedInstanceBinder, compiledLambdaMap, filter);
+        Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap = generateMethodsForLambda(session, classDefinition, callSiteBinder, cachedInstanceBinder, filter);
+        generateFilterMethod(session, classDefinition, callSiteBinder, cachedInstanceBinder, compiledLambdaMap, filter);
 
         FieldDefinition selectedPositions = classDefinition.declareField(a(PRIVATE), "selectedPositions", boolean[].class);
         generatePageFilterMethod(classDefinition, selectedPositions);
@@ -489,13 +504,14 @@ public class PageFunctionCompiler
     }
 
     private MethodDefinition generateFilterMethod(
+            Session session,
             ClassDefinition classDefinition,
             CallSiteBinder callSiteBinder,
             CachedInstanceBinder cachedInstanceBinder,
             Map<LambdaDefinitionExpression, CompiledLambda> compiledLambdaMap,
             RowExpression filter)
     {
-        Parameter session = arg("session", ConnectorSession.class);
+        Parameter connectorSession = arg("session", ConnectorSession.class);
         Parameter page = arg("page", Page.class);
         Parameter position = arg("position", int.class);
 
@@ -504,7 +520,7 @@ public class PageFunctionCompiler
                 "filter",
                 type(boolean.class),
                 ImmutableList.<Parameter>builder()
-                        .add(session)
+                        .add(connectorSession)
                         .add(page)
                         .add(position)
                         .build());
@@ -518,6 +534,7 @@ public class PageFunctionCompiler
 
         Variable wasNullVariable = scope.declareVariable("wasNull", body, constantFalse());
         RowExpressionCompiler compiler = new RowExpressionCompiler(
+                session,
                 callSiteBinder,
                 cachedInstanceBinder,
                 fieldReferenceCompiler(callSiteBinder),
@@ -533,6 +550,7 @@ public class PageFunctionCompiler
     }
 
     private Map<LambdaDefinitionExpression, CompiledLambda> generateMethodsForLambda(
+            Session session,
             ClassDefinition containerClassDefinition,
             CallSiteBinder callSiteBinder,
             CachedInstanceBinder cachedInstanceBinder,
@@ -544,6 +562,7 @@ public class PageFunctionCompiler
         int counter = 0;
         for (LambdaDefinitionExpression lambdaExpression : lambdaExpressions) {
             CompiledLambda compiledLambda = LambdaBytecodeGenerator.preGenerateLambdaExpression(
+                    session,
                     lambdaExpression,
                     "lambda_" + counter,
                     containerClassDefinition,
