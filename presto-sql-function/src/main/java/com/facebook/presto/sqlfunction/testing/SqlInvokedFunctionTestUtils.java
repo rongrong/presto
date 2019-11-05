@@ -22,6 +22,8 @@ import com.google.common.collect.ImmutableList;
 import java.util.Optional;
 
 import static com.facebook.presto.spi.function.RoutineCharacteristics.Determinism.DETERMINISTIC;
+import static com.facebook.presto.spi.function.RoutineCharacteristics.Determinism.NOT_DETERMINISTIC;
+import static com.facebook.presto.spi.function.RoutineCharacteristics.Language.JAVA;
 import static com.facebook.presto.spi.function.RoutineCharacteristics.Language.SQL;
 import static com.facebook.presto.spi.function.RoutineCharacteristics.NullCallClause.CALLED_ON_NULL_INPUT;
 import static com.facebook.presto.spi.function.RoutineCharacteristics.NullCallClause.RETURNS_NULL_ON_NULL_INPUT;
@@ -36,6 +38,7 @@ public class SqlInvokedFunctionTestUtils
     }
 
     public static final QualifiedFunctionName POWER_TOWER = QualifiedFunctionName.of("unittest.memory.power_tower");
+    public static final QualifiedFunctionName REMOTE_FOO = QualifiedFunctionName.of("unittest.memory.remote_foo");
 
     public static final SqlInvokedFunction FUNCTION_POWER_TOWER_DOUBLE = new SqlInvokedFunction(
             POWER_TOWER,
@@ -62,5 +65,41 @@ public class SqlInvokedFunctionTestUtils
             "power tower",
             new RoutineCharacteristics(SQL, DETERMINISTIC, RETURNS_NULL_ON_NULL_INPUT),
             "pow(x, x)",
+            Optional.empty());
+
+    public static final SqlInvokedFunction FUNCTION_REMOTE_FOO_0 = new SqlInvokedFunction(
+            REMOTE_FOO,
+            ImmutableList.of(),
+            parseTypeSignature(INTEGER),
+            "remote_foo()",
+            new RoutineCharacteristics(JAVA, NOT_DETERMINISTIC, RETURNS_NULL_ON_NULL_INPUT),
+            "",
+            Optional.empty());
+
+    public static final SqlInvokedFunction FUNCTION_REMOTE_FOO_1 = new SqlInvokedFunction(
+            REMOTE_FOO,
+            ImmutableList.of(new SqlParameter("x", parseTypeSignature(INTEGER))),
+            parseTypeSignature(INTEGER),
+            "remote_foo(x)",
+            new RoutineCharacteristics(JAVA, DETERMINISTIC, RETURNS_NULL_ON_NULL_INPUT),
+            "",
+            Optional.empty());
+
+    public static final SqlInvokedFunction FUNCTION_REMOTE_FOO_2 = new SqlInvokedFunction(
+            REMOTE_FOO,
+            ImmutableList.of(new SqlParameter("x", parseTypeSignature(INTEGER)), new SqlParameter("y", parseTypeSignature(INTEGER))),
+            parseTypeSignature(INTEGER),
+            "remote_foo(x, y)",
+            new RoutineCharacteristics(JAVA, DETERMINISTIC, RETURNS_NULL_ON_NULL_INPUT),
+            "",
+            Optional.empty());
+
+    public static final SqlInvokedFunction FUNCTION_REMOTE_FOO_3 = new SqlInvokedFunction(
+            REMOTE_FOO,
+            ImmutableList.of(new SqlParameter("x", parseTypeSignature(INTEGER)), new SqlParameter("y", parseTypeSignature(INTEGER)), new SqlParameter("z", parseTypeSignature(DOUBLE))),
+            parseTypeSignature(INTEGER),
+            "remote_foo(x, y, z)",
+            new RoutineCharacteristics(JAVA, NOT_DETERMINISTIC, RETURNS_NULL_ON_NULL_INPUT),
+            "",
             Optional.empty());
 }

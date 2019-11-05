@@ -8247,6 +8247,12 @@ public abstract class AbstractTestQueries
                 "WITH small_part AS (SELECT * FROM part WHERE name = 'a') SELECT lineitem.orderkey FROM small_part RIGHT JOIN lineitem ON  small_part.partkey = lineitem.partkey");
     }
 
+    @Test
+    public void testRongrong()
+    {
+        assertQuery("select if(a is not null, cardinality(a), cardinality(b)) from (values (array[1, 2, 3], array[2, 3])) t(a, b)");
+    }
+
     protected Session noJoinReordering()
     {
         return Session.builder(getSession())
