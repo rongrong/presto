@@ -24,7 +24,8 @@ public class RoutineCharacteristics
 {
     public enum Language
     {
-        SQL;
+        SQL,
+        JAVA;
     }
 
     public enum Determinism

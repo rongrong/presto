@@ -125,6 +125,15 @@ public class FunctionManager
         this(typeManager, createTestTransactionManager(), blockEncodingSerde, featuresConfig, new HandleResolver());
     }
 
+    @VisibleForTesting
+    public void addTestFunctionNamespace(FunctionNamespaceManager functionNamespaceManager, String catalogSchemaPrefix)
+    {
+        transactionManager.registerFunctionNamespaceManager(functionNamespaceManager.getName(), functionNamespaceManager);
+        if (functionNamespaces.putIfAbsent(CatalogSchemaPrefix.of(catalogSchemaPrefix), functionNamespaceManager) != null) {
+            throw new IllegalArgumentException(format("Function namespace manager '%s' already registered to handle function namespace '%s'", functionNamespaceManager.getName(), catalogSchemaPrefix));
+        }
+    }
+
     public void loadFunctionNamespaces(String functionNamespaceManagerName, List<String> catalogSchemaPrefixes, Map<String, String> properties)
     {
         requireNonNull(functionNamespaceManagerName, "connectorName is null");
