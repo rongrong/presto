@@ -18,12 +18,15 @@ import com.facebook.presto.spi.relation.VariableReferenceExpression;
 import com.facebook.presto.sql.planner.PlanVariableAllocator;
 import com.facebook.presto.sql.planner.iterative.Rule;
 import com.facebook.presto.sql.planner.optimizations.RemoteFunctionChecker;
+import com.facebook.presto.sql.planner.optimizations.SymbolMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableMultimap;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static com.facebook.presto.spi.function.FunctionImplementationType.REMOTE;
 import static com.facebook.presto.sql.planner.plan.Patterns.project;
@@ -86,7 +89,65 @@ public class PlanRemotePojections
                 assignmentProjections.add(projectionContextBuilder.build());
             }
         }
-        return mergeProjectionContexts(assignmentProjections.build());
+        List<ProjectionContext> mergedProjectionContexts = mergeProjectionContexts(assignmentProjections.build());
+        return dedupVariables(mergedProjectionContexts);
+    }
+
+    private static List<ProjectionContext> dedupVariables(List<ProjectionContext> projectionContexts)
+    {
+        ImmutableList.Builder<ProjectionContext> deduppedProjectionContexts = ImmutableList.builder();
+        Set<VariableReferenceExpression> originalVariable = projectionContexts.get(projectionContexts.size() - 1).getProjections().keySet();
+        SymbolMapper mapper = null;
+        for (int i = 0; i < projectionContexts.size(); i++) {
+            Map<VariableReferenceExpression, RowExpression> projections = projectionContexts.get(i).getProjections();
+            // Apply mapping from previous projection
+            if (mapper != null) {
+                ImmutableMap.Builder<VariableReferenceExpression, RowExpression> newProjections = ImmutableMap.builder();
+                for (Map.Entry<VariableReferenceExpression, RowExpression> entry : projections.entrySet()) {
+                    newProjections.put(entry.getKey(), mapper.map(entry.getValue()));
+                }
+                projections = newProjections.build();
+            }
+
+            // Dedup
+            ImmutableMultimap.Builder<RowExpression, VariableReferenceExpression> reverseProjectionsBuilder = ImmutableMultimap.builder();
+            projections.forEach((key, value) -> reverseProjectionsBuilder.put(value, key));
+            ImmutableMultimap<RowExpression, VariableReferenceExpression> reverseProjections = reverseProjectionsBuilder.build();
+            if (reverseProjections.keySet().size() == projectionContexts.get(i).getProjections().size() && reverseProjections.keySet().stream().noneMatch(VariableReferenceExpression.class::isInstance)) {
+                // No duplication
+                deduppedProjectionContexts.add(projectionContexts.get(i));
+                mapper = null;
+            }
+            else {
+                SymbolMapper.Builder mapperBuilder = SymbolMapper.builder();
+                ImmutableMap.Builder<VariableReferenceExpression, RowExpression> dedupedProjectionsBuilder = ImmutableMap.builder();
+                for(RowExpression key: reverseProjections.keySet()) {
+                    List<VariableReferenceExpression> values = ImmutableList.copyOf(reverseProjections.get(key));
+                    if (key instanceof VariableReferenceExpression) {
+                        values.forEach(variable -> mapperBuilder.put(variable, (VariableReferenceExpression) key));
+                        dedupedProjectionsBuilder.put((VariableReferenceExpression) key, key);
+                    }
+                    else if (values.size() > 1) {
+                        // Consolidate to one variable, prefer variables from original plan
+                        List<VariableReferenceExpression> fromOriginal = originalVariable.stream().filter(values::contains).collect(toImmutableList());
+                        VariableReferenceExpression variable = fromOriginal.isEmpty() ? values.get(0) : getOnlyElement(fromOriginal);
+                        for (int j = 0; j < values.size(); j++) {
+                            if (!values.get(i).equals(variable)) {
+                                mapperBuilder.put(values.get(j), variable);
+                            }
+                        }
+                        dedupedProjectionsBuilder.put(variable, key);
+                    }
+                    else {
+                        checkState(values.size() == 1, "Expect only 1 value");
+                        dedupedProjectionsBuilder.put(values.get(0), key);
+                    }
+                }
+                deduppedProjectionContexts.add(new ProjectionContext(dedupedProjectionsBuilder.build(), projectionContexts.get(i).isRemote()));
+                mapper = mapperBuilder.build();
+            }
+        }
+        return deduppedProjectionContexts.build();
     }
 
     private static List<ProjectionContext> mergeProjectionContexts(List<List<ProjectionContext>> projectionContexts)
