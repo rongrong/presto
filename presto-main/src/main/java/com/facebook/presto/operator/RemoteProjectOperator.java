@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.operator;
 
+import com.facebook.airlift.log.Logger;
 import com.facebook.presto.common.Page;
 import com.facebook.presto.common.block.Block;
 import com.facebook.presto.metadata.FunctionManager;
@@ -39,6 +40,8 @@ import static java.util.concurrent.CompletableFuture.completedFuture;
 public class RemoteProjectOperator
         implements Operator
 {
+    private static final Logger log = Logger.get(RemoteProjectOperator.class);
+
     private final OperatorContext operatorContext;
     private final FunctionManager functionManager;
     private final List<RowExpression> projections;
@@ -70,6 +73,11 @@ public class RemoteProjectOperator
     @Override
     public void addInput(Page page)
     {
+        log.info(
+                "Remote project addInput for taskId %s: row count: %d, size in bytes: %d",
+                operatorContext.getDriverContext().getTaskId(),
+                page.getPositionCount(),
+                page.getSizeInBytes());
         checkState(!finishing, "Operator is already finishing");
         checkState(!processingPage(), "Still processing previous input");
         requireNonNull(page, "page is null");
@@ -105,14 +113,21 @@ public class RemoteProjectOperator
                     blocks[i] = result[i].get();
                 }
                 output = new Page(blocks);
+                log.info(
+                        "Remote project getOutput for taskId %s: row count: %d, size in bytes: %d",
+                        operatorContext.getDriverContext().getTaskId(),
+                        output.getPositionCount(),
+                        output.getSizeInBytes());
                 Arrays.fill(result, null);
                 return output;
             }
             catch (InterruptedException ie) {
+                log.error("InterruptedException: %s", ie.getMessage());
                 currentThread().interrupt();
                 throw new RuntimeException(ie);
             }
             catch (ExecutionException e) {
+                log.error("ExecutionException: %s", e.getMessage());
                 Throwable cause = e.getCause();
                 if (cause != null) {
                     throwIfUnchecked(cause);
