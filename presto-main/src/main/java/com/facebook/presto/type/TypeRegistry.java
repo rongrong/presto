@@ -98,15 +98,14 @@ public final class TypeRegistry
     private final ConcurrentMap<String, ParametricType> parametricTypes = new ConcurrentHashMap<>();
     private final FeaturesConfig featuresConfig;
 
-    private final FunctionAndTypeManager functionAndTypeManager;
+    private FunctionAndTypeManager functionAndTypeManager;
 
     private final LoadingCache<TypeSignature, Type> parametricTypeCache;
 
-    public TypeRegistry(Set<Type> types, FeaturesConfig featuresConfig, FunctionAndTypeManager functionAndTypeManager)
+    public TypeRegistry(Set<Type> types, FeaturesConfig featuresConfig)
     {
         requireNonNull(types, "types is null");
         this.featuresConfig = requireNonNull(featuresConfig, "featuresConfig is null");
-        this.functionAndTypeManager = requireNonNull(functionAndTypeManager, "functionAndTypeManager is null");
 
         // Manually register UNKNOWN type without a verifyTypeClass call since it is a special type that can not be used by functions
         this.types.put(UNKNOWN.getTypeSignature(), UNKNOWN);
@@ -156,6 +155,12 @@ public final class TypeRegistry
         parametricTypeCache = CacheBuilder.newBuilder()
                 .maximumSize(1000)
                 .build(CacheLoader.from(this::instantiateParametricType));
+    }
+
+    public void setFunctionManager(FunctionAndTypeManager functionAndTypeManager)
+    {
+        checkState(this.functionAndTypeManager == null, "TypeRegistry can only be associated with a single FunctionManager");
+        this.functionAndTypeManager = requireNonNull(functionAndTypeManager, "functionManager is null");
     }
 
     public Type getType(TypeSignature signature)
