@@ -14,6 +14,8 @@
 package com.facebook.presto.functionNamespace.execution.thrift;
 
 import com.facebook.drift.client.address.SimpleAddressSelectorConfig;
+import com.facebook.presto.common.block.BlockEncodingManager;
+import com.facebook.presto.common.block.BlockEncodingSerde;
 import com.facebook.presto.spi.function.RoutineCharacteristics.Language;
 import com.facebook.presto.thrift.api.udf.ThriftUdfService;
 import com.google.inject.Binder;
@@ -41,6 +43,8 @@ public class SimpleAddressThriftSqlFunctionExecutionModule
     public void configure(Binder binder)
     {
         binder.bind(ThriftSqlFunctionExecutor.class).in(SINGLETON);
+        binder.bind(BlockEncodingManager.class).in(SINGLETON);
+        binder.bind(BlockEncodingSerde.class).to(BlockEncodingManager.class).in(SINGLETON);
 
         driftClientBinder(binder)
                 .bindDriftClient(ThriftUdfService.class)

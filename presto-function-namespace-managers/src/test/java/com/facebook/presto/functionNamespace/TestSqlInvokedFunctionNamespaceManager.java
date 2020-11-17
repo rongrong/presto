@@ -14,7 +14,6 @@
 package com.facebook.presto.functionNamespace;
 
 import com.facebook.presto.functionNamespace.execution.SqlFunctionExecutors;
-import com.facebook.presto.functionNamespace.execution.thrift.ThriftSqlFunctionExecutor;
 import com.facebook.presto.functionNamespace.testing.InMemoryFunctionNamespaceManager;
 import com.facebook.presto.spi.ErrorCodeSupplier;
 import com.facebook.presto.spi.PrestoException;
@@ -82,9 +81,7 @@ public class TestSqlInvokedFunctionNamespaceManager
     {
         InMemoryFunctionNamespaceManager functionNamespaceManager = new InMemoryFunctionNamespaceManager(
                 TEST_CATALOG,
-                new SqlFunctionExecutors(
-                        ImmutableMap.of(SQL, FunctionImplementationType.SQL),
-                        new ThriftSqlFunctionExecutor(null)),
+                new SqlFunctionExecutors(ImmutableMap.of(SQL, FunctionImplementationType.SQL), null),
                 new SqlInvokedFunctionNamespaceManagerConfig()
                         .setFunctionCacheExpiration(new Duration(0, MILLISECONDS))
                         .setFunctionInstanceCacheExpiration(new Duration(0, MILLISECONDS)));
@@ -157,9 +154,7 @@ public class TestSqlInvokedFunctionNamespaceManager
     {
         return new InMemoryFunctionNamespaceManager(
                 TEST_CATALOG,
-                new SqlFunctionExecutors(
-                        ImmutableMap.of(SQL, FunctionImplementationType.SQL),
-                        new ThriftSqlFunctionExecutor(null)),
+                new SqlFunctionExecutors(ImmutableMap.of(SQL, FunctionImplementationType.SQL), null),
                 new SqlInvokedFunctionNamespaceManagerConfig());
     }
 

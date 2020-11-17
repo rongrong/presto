@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
@@ -41,7 +42,7 @@ public class SqlFunctionExecutors
     public SqlFunctionExecutors(Map<Language, FunctionImplementationType> supportedLanguages, ThriftSqlFunctionExecutor thriftSqlFunctionExecutor)
     {
         this.supportedLanguages = requireNonNull(supportedLanguages, "supportedLanguages is null");
-        this.thriftSqlFunctionExecutor = requireNonNull(thriftSqlFunctionExecutor, "thriftSqlFunctionExecutor is null");
+        this.thriftSqlFunctionExecutor = thriftSqlFunctionExecutor;
     }
 
     public Set<Language> getSupportedLanguages()
@@ -57,6 +58,7 @@ public class SqlFunctionExecutors
     public CompletableFuture<Block> executeFunction(ScalarFunctionImplementation functionImplementation, Page input, List<Integer> channels, List<Type> argumentTypes, Type returnType)
     {
         checkArgument(functionImplementation instanceof ThriftScalarFunctionImplementation, format("Only support ThriftScalarFunctionImplementation, got %s", functionImplementation.getClass()));
+        checkState(thriftSqlFunctionExecutor != null, "Do not have ThriftSqlFunctionExecutor");
         return thriftSqlFunctionExecutor.executeFunction((ThriftScalarFunctionImplementation) functionImplementation, input, channels, argumentTypes, returnType);
     }
 }
