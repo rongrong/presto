@@ -15,6 +15,7 @@ package com.facebook.presto.operator;
 
 import com.facebook.presto.common.Page;
 import com.facebook.presto.common.block.Block;
+import com.facebook.presto.common.block.RunLengthEncodedBlock;
 import com.facebook.presto.metadata.FunctionAndTypeManager;
 import com.facebook.presto.spi.plan.PlanNodeId;
 import com.facebook.presto.spi.relation.CallExpression;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.collect.ImmutableList.toImmutableList;
@@ -75,10 +77,13 @@ public class RemoteProjectOperator
         requireNonNull(page, "page is null");
         for (int channel = 0; channel < projections.size(); channel++) {
             RowExpression projection = projections.get(channel);
+            checkArgument(
+                    projection instanceof InputReferenceExpression || projection instanceof CallExpression,
+                    format("Only expect InputReferenceExpression or CallExpression, gets %s from project %s", projection.getClass(), projection.toString()));
             if (projection instanceof InputReferenceExpression) {
                 result[channel] = completedFuture(page.getBlock(((InputReferenceExpression) projection).getField()));
             }
-            else if (projection instanceof CallExpression) {
+            else {
                 CallExpression remoteCall = (CallExpression) projection;
                 result[channel] = functionAndTypeManager.executeFunction(
                         remoteCall.getFunctionHandle(),
@@ -87,9 +92,6 @@ public class RemoteProjectOperator
                                 .map(InputReferenceExpression.class::cast)
                                 .map(InputReferenceExpression::getField)
                                 .collect(toImmutableList()));
-            }
-            else {
-                checkState(projection instanceof ConstantExpression, format("Does not expect expression type %s", projection.getClass()));
             }
         }
     }
