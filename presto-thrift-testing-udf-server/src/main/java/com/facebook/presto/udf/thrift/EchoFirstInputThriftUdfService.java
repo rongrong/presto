@@ -23,22 +23,17 @@ import com.facebook.presto.thrift.api.udf.ThriftUdfService;
 import com.facebook.presto.thrift.api.udf.ThriftUdfStats;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.inject.Inject;
 
 import java.util.Optional;
 
-import static com.facebook.airlift.concurrent.Threads.threadsNamed;
 import static com.facebook.presto.thrift.api.udf.ThriftUdfPage.prestoPage;
 import static com.facebook.presto.thrift.api.udf.ThriftUdfPage.thriftPage;
-import static com.google.common.util.concurrent.MoreExecutors.listeningDecorator;
-import static java.util.concurrent.Executors.newFixedThreadPool;
+import static com.google.common.util.concurrent.Futures.immediateFuture;
 
 public class EchoFirstInputThriftUdfService
         implements ThriftUdfService
 {
-    private final ListeningExecutorService executor = listeningDecorator(
-            newFixedThreadPool(Runtime.getRuntime().availableProcessors(), threadsNamed("udf-thrift-%s")));
     private final PagesSerde pagesSerde;
 
     @Inject
@@ -64,7 +59,7 @@ public class EchoFirstInputThriftUdfService
             default:
                 throw new UnsupportedOperationException();
         }
-        return executor.submit(() -> new ThriftUdfResult(
+        return immediateFuture(new ThriftUdfResult(
                 result,
                 new ThriftUdfStats(0)));
     }
