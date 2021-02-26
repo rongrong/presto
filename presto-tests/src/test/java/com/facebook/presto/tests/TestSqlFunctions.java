@@ -204,10 +204,10 @@ public class TestSqlFunctions
     {
         assertQuerySucceeds("CREATE FUNCTION testing.test.get_last_name(person testing.type.person) RETURNS varchar RETURN person.last_name");
         assertQuery("SELECT testing.test.get_last_name(CAST(ROW('test', 'user', tinyint'20', testing.enum.country.US) AS testing.type.person))", "SELECT 'user'");
-        assertQuery("SELECT testing.test.get_last_name(ROW('test', 'user', tinyint'20', testing.enum.country.US))", "SELECT 'user'");
-        assertQueryFails("SELECT testing.test.get_last_name(ROW('test', 'user', tinyint'20', testing.enum.country.US, 'extra'))", ".*Unexpected parameters.*");
+        assertQueryFails("SELECT testing.test.get_last_name(ROW('test', 'user', tinyint'20', testing.enum.country.US))", ".*Unexpected parameters.*");
+        assertQueryFails("SELECT testing.test.get_last_name(CAST(ROW('test', 'user', tinyint'20', testing.enum.country.US, 'extra') as testing.type.person))", "the size of fromType and toType must match");
         assertQuerySucceeds("CREATE FUNCTION testing.test.get_country(person testing.type.person) RETURNS testing.enum.country RETURN person.country");
-        MaterializedResult rows = computeActual("SELECT testing.test.get_country(ROW('test', 'user', tinyint'20', testing.enum.country.US))");
+        MaterializedResult rows = computeActual("SELECT testing.test.get_country(CAST(ROW('test', 'user', tinyint'20', testing.enum.country.US) as testing.type.person))");
         assertEquals(rows.getTypes().get(0).getDisplayName(), "testing.enum.country");
         assertEquals(rows.getMaterializedRows().get(0).getFields().get(0), "United States");
     }

@@ -422,6 +422,11 @@ public class FunctionAndTypeManager
         return typeCoercer.isTypeOnlyCoercion(actualType, expectedType);
     }
 
+    public boolean isTypeOnlyCoercion(TypeWithName actualType, TypeWithName expectedType)
+    {
+        return typeCoercer.isTypeOnlyCoercion(actualType.getType(), expectedType.getType());
+    }
+
     public Optional<TypeWithName> coerceTypeBase(TypeWithName sourceType, String resultTypeBase)
     {
         return typeCoercer.coerceTypeBase(sourceType.getType(), resultTypeBase).map(TypeWithName::new);
@@ -514,7 +519,8 @@ public class FunctionAndTypeManager
 
     public FunctionHandle lookupCast(CastType castType, TypeSignature fromType, TypeSignature toType)
     {
-        Signature signature = new Signature(castType.getCastName(), SCALAR, emptyList(), emptyList(), toType, singletonList(fromType), false);
+        // TODO we always use the base type to look up cast for now. Support named type to base type cast properly.
+        Signature signature = new Signature(castType.getCastName(), SCALAR, emptyList(), emptyList(), toType.getStandardTypeSignature(), singletonList(fromType.getStandardTypeSignature()), false);
 
         try {
             builtInTypeAndFunctionNamespaceManager.getScalarFunctionImplementation(signature);
